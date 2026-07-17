@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:flutter/foundation.dart';
 import '../feedback/feedback_service.dart';
 
 enum UpdaterState {
@@ -28,7 +29,7 @@ enum UpdaterError {
 class UpdaterService {
   static UpdaterState state = UpdaterState.idle;
   static UpdaterError? lastError;
-  static double downloadProgress = 0.0;
+  static final ValueNotifier<double> downloadProgressNotifier = ValueNotifier(0.0);
   
   static void Function(UpdaterState, UpdaterError?)? onStateChange;
   
@@ -73,7 +74,9 @@ class UpdaterService {
           await _downloadUpdate(manifest['downloadUrl'], manifest['sha256']);
         } else {
           state = UpdaterState.idle;
-          onStateChange?.call(state, lastError);
+          if (!silent) {
+            onStateChange?.call(state, lastError);
+          }
         }
       } else if (response.statusCode == 404) {
         _handleError(UpdaterError.manifestNotFound, silent, details: '404 File Not Found on GitHub');
@@ -95,7 +98,7 @@ class UpdaterService {
 
   static Future<void> _downloadUpdate(String url, String expectedHash) async {
     state = UpdaterState.downloading;
-    downloadProgress = 0.0;
+    downloadProgressNotifier.value = 0.0;
     onStateChange?.call(state, lastError);
     
     try {
@@ -117,7 +120,7 @@ class UpdaterService {
       await for (final chunk in response.stream) {
         sink.add(chunk);
         bytesDownloaded += chunk.length;
-        downloadProgress = bytesDownloaded / contentLength;
+        downloadProgressNotifier.value = bytesDownloaded / contentLength;
       }
       
       await sink.flush();

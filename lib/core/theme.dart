@@ -89,6 +89,11 @@ class AppTheme {
           foregroundColor: primaryTextDark,
         ),
       ),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: Color(0xFF2B2D2A), // slightly lighter than offBlack
+        contentTextStyle: TextStyle(color: primaryTextDark),
+        behavior: SnackBarBehavior.floating,
+      ),
       useMaterial3: true,
     );
   }

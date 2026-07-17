@@ -28,7 +28,6 @@ void main() async {
   
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.setTitle('Infer Notes');
-    await windowManager.setPreventClose(true);
     await windowManager.show();
   });
   

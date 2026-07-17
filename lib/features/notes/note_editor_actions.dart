@@ -39,7 +39,7 @@ mixin NoteEditorActions on NoteEditorState {
       });
       _saveVaultPath(null);
     } else {
-      String? path = await FilePicker.platform.getDirectoryPath();
+      String? path = await getDirectoryPath();
       if (path != null) {
         setState(() {
           vaultPath = path;

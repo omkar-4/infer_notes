@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'dart:async';
 import '../../core/animated_notification.dart';
 import '../updater/updater_service.dart';
@@ -23,14 +23,13 @@ class NoteEditorScreen extends StatefulWidget {
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
 }
 
-class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorState, NoteEditorActions, NoteEditorUI, WindowListener {
+class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorState, NoteEditorActions, NoteEditorUI {
   double _lastScreenWidth = 0;
   final ScrollController _toolbarScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
     
     UpdaterService.onStateChange = (state, error) {
       if (mounted) {
@@ -74,7 +73,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
       );
     } else if (state == UpdaterState.idle) {
       // Means already up to date if manually checked (not silent)
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You are already using the latest version.')));
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('You are already using the latest version.'),
+        duration: Duration(seconds: 2),
+      ));
     } else if (state == UpdaterState.readyToInstall) {
       showDialog(
         context: context,
@@ -101,40 +104,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
 
   @override
   void dispose() {
-    windowManager.removeListener(this);
     super.dispose();
-  }
-
-  @override
-  Future<void> onWindowClose() async {
-    if (UpdaterService.state == UpdaterState.downloading) {
-      final shouldQuit = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Update Downloading'),
-          content: const Text('An update is currently downloading. Are you sure you want to quit?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Wait'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Quit', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-      );
-      if (shouldQuit != true) return;
-    }
-
-    // Force atomic save of all unsaved notes before closing
-    for (String path in unsavedFiles.toList()) {
-      if (_fileCache.containsKey(path)) {
-        await saveNoteAtomic(path, _fileCache[path]!, isManual: false);
-      }
-    }
-    await windowManager.destroy();
   }
 
   @override
@@ -434,10 +404,57 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
           ),
         },
         child: Scaffold(
-          body: Column(
+          body: Stack(
             children: [
-              const CustomTitleBar(),
-              Expanded(child: scaffoldBody),
+              Column(
+                children: [
+                  const CustomTitleBar(),
+                  Expanded(child: scaffoldBody),
+                ],
+              ),
+              Positioned(
+                bottom: 16,
+                right: 16,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: UpdaterService.downloadProgressNotifier,
+                  builder: (context, progress, child) {
+                    if (progress <= 0.0 || progress >= 1.0) return const SizedBox.shrink();
+                    return Container(
+                      width: 250,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Theme.of(context).dividerColor),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2), 
+                            blurRadius: 8, 
+                            offset: const Offset(0, 4)
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Downloading Update...', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          LinearProgressIndicator(
+                            value: progress, 
+                            backgroundColor: Theme.of(context).dividerColor,
+                          ),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text('${(progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ),
