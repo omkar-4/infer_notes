@@ -4,10 +4,18 @@ import 'features/notes/note_editor_screen.dart';
 import 'core/theme.dart';
 import 'features/updater/updater_service.dart';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (_) {
+    // Ignore if .env is missing
+  }
   
   // Initialize window_manager to control the native OS window title purely from Dart
   await windowManager.ensureInitialized();

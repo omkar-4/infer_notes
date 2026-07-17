@@ -5,14 +5,16 @@
 import FlutterMacOS
 import Foundation
 
-import desktop_updater
-import file_picker
+import device_info_plus
+import package_info_plus
 import screen_retriever_macos
+import shared_preferences_foundation
 import window_manager
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  DesktopUpdaterPlugin.register(with: registry.registrar(forPlugin: "DesktopUpdaterPlugin"))
-  FilePickerPlugin.register(with: registry.registrar(forPlugin: "FilePickerPlugin"))
+  DeviceInfoPlusMacosPlugin.register(with: registry.registrar(forPlugin: "DeviceInfoPlusMacosPlugin"))
+  FPPPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FPPPackageInfoPlusPlugin"))
   ScreenRetrieverMacosPlugin.register(with: registry.registrar(forPlugin: "ScreenRetrieverMacosPlugin"))
+  SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
   WindowManagerPlugin.register(with: registry.registrar(forPlugin: "WindowManagerPlugin"))
 }

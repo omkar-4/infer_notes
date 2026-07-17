@@ -11,7 +11,6 @@ import '../../main.dart';
 import '../../core/theme.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'package:desktop_updater/desktop_updater.dart';
 
 part 'note_editor_state.dart';
 part 'note_editor_actions.dart';
@@ -32,6 +31,72 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    
+    UpdaterService.onStateChange = (state, error) {
+      if (mounted) {
+        _handleUpdaterStateChange(state, error);
+      }
+    };
+  }
+
+  void _handleUpdaterStateChange(UpdaterState state, UpdaterError? error) {
+    if (error != null) {
+      String msg = 'An unknown error occurred.';
+      switch (error) {
+        case UpdaterError.noInternetConnection: msg = 'No internet connection.'; break;
+        case UpdaterError.manifestNotFound: msg = 'Update file not found on server (404). Please report this through the feedback portal in the sidebar.'; break;
+        case UpdaterError.manifestFormatError: msg = 'The update data is corrupted. Please report this through the feedback portal in the sidebar.'; break;
+        case UpdaterError.manifestFetchFailed: msg = 'Failed to check for updates. The server returned an error. Please report this through the feedback portal in the sidebar.'; break;
+        case UpdaterError.downloadFailed: msg = 'Download failed.'; break;
+        case UpdaterError.checksumMismatch: msg = 'Download corrupted or tampered.'; break;
+        case UpdaterError.installationFailed: msg = 'Installation failed.'; break;
+        case UpdaterError.miscError: msg = 'An unexpected error occurred.'; break;
+      }
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Update Error'),
+          content: Text(msg),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Ignore'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                UpdaterService.checkUpdatesManually();
+              },
+              child: const Text('Try Again'),
+            ),
+          ],
+        )
+      );
+    } else if (state == UpdaterState.idle) {
+      // Means already up to date if manually checked (not silent)
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You are already using the latest version.')));
+    } else if (state == UpdaterState.readyToInstall) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Update Ready'),
+          content: const Text('A new update has been securely downloaded. Restart now to apply?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Update on Next Launch'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                UpdaterService.executeInstall();
+              },
+              child: const Text('Restart Now'),
+            ),
+          ],
+        )
+      );
+    }
   }
 
   @override
@@ -42,6 +107,27 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
 
   @override
   Future<void> onWindowClose() async {
+    if (UpdaterService.state == UpdaterState.downloading) {
+      final shouldQuit = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Update Downloading'),
+          content: const Text('An update is currently downloading. Are you sure you want to quit?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Wait'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Quit', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+      if (shouldQuit != true) return;
+    }
+
     // Force atomic save of all unsaved notes before closing
     for (String path in unsavedFiles.toList()) {
       if (_fileCache.containsKey(path)) {
@@ -348,25 +434,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
           ),
         },
         child: Scaffold(
-          body: UpdaterService.controller != null
-              ? DesktopUpdateWidget(
-                  controller: UpdaterService.controller!,
-                  child: SizedBox(
-                    height: MediaQuery.of(context).size.height,
-                    child: Column(
-                      children: [
-                        const CustomTitleBar(),
-                        Expanded(child: scaffoldBody),
-                      ],
-                    ),
-                  ),
-                )
-              : Column(
-                  children: [
-                    const CustomTitleBar(),
-                    Expanded(child: scaffoldBody),
-                  ],
-                ),
+          body: Column(
+            children: [
+              const CustomTitleBar(),
+              Expanded(child: scaffoldBody),
+            ],
+          ),
         ),
       ),
     );
