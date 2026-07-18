@@ -4,7 +4,7 @@ import 'block_model.dart';
 
 class SlashCommandMenu extends StatefulWidget {
   final Offset position;
-  final Function(BlockType type) onSelect;
+  final Function(dynamic choice) onSelect;
   final VoidCallback onDismiss;
 
   const SlashCommandMenu({
@@ -32,6 +32,9 @@ class _SlashCommandMenuState extends State<SlashCommandMenu> {
     {'type': BlockType.blockquote, 'label': 'Quote', 'icon': Icons.format_quote, 'desc': 'Styled blockquote'},
     {'type': BlockType.codeBlock, 'label': 'Code Block', 'icon': Icons.code, 'desc': 'Code snippet block'},
     {'type': BlockType.divider, 'label': 'Divider', 'icon': Icons.horizontal_rule, 'desc': 'Visual separating line'},
+    {'type': 'undo', 'label': 'Undo', 'icon': Icons.undo, 'desc': 'Undo last action (Ctrl+Z)'},
+    {'type': 'redo', 'label': 'Redo', 'icon': Icons.redo, 'desc': 'Redo last action (Ctrl+Shift+Z)'},
+    {'type': 'benchmark', 'label': 'Run Benchmarks', 'icon': Icons.speed, 'desc': 'Exhaustive performance analysis'},
   ];
 
   @override
@@ -51,7 +54,7 @@ class _SlashCommandMenuState extends State<SlashCommandMenu> {
             });
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-            widget.onSelect(_options[_selectedIndex]['type'] as BlockType);
+            widget.onSelect(_options[_selectedIndex]['type']);
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.escape) {
             widget.onDismiss();
@@ -96,7 +99,7 @@ class _SlashCommandMenuState extends State<SlashCommandMenu> {
                     final opt = _options[index];
 
                     return InkWell(
-                      onTap: () => widget.onSelect(opt['type'] as BlockType),
+                      onTap: () => widget.onSelect(opt['type']),
                       child: Container(
                         color: isSelected ? Theme.of(context).focusColor : null,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

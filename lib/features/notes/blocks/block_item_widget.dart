@@ -18,6 +18,12 @@ class BlockItemWidget extends StatefulWidget {
   final Function(bool isShiftPressed) onSelectAbove;
   final Function(bool isShiftPressed) onSelectBelow;
   final VoidCallback onSelectAll;
+  final VoidCallback onCopy;
+  final VoidCallback onCut;
+  final VoidCallback onPaste;
+  final bool isMultiSelected;
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
 
   const BlockItemWidget({
     super.key,
@@ -36,6 +42,12 @@ class BlockItemWidget extends StatefulWidget {
     required this.onSelectAbove,
     required this.onSelectBelow,
     required this.onSelectAll,
+    required this.onCopy,
+    required this.onCut,
+    required this.onPaste,
+    required this.isMultiSelected,
+    required this.onUndo,
+    required this.onRedo,
   });
 
   @override
@@ -66,17 +78,41 @@ class _BlockItemWidgetState extends State<BlockItemWidget> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
 
     final isControlPressed = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
     final isShiftPressed = HardwareKeyboard.instance.isShiftPressed;
 
-    if (event.logicalKey == LogicalKeyboardKey.keyA && isControlPressed) {
-      final text = widget.block.controller.text;
-      final selection = widget.block.controller.selection;
-      if (selection.baseOffset == 0 && selection.extentOffset == text.length) {
-        widget.onSelectAll();
+    if (isControlPressed) {
+      if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+        if (isShiftPressed) {
+          widget.onRedo();
+        } else {
+          widget.onUndo();
+        }
         return KeyEventResult.handled;
+      }
+      if (widget.isMultiSelected) {
+        if (event.logicalKey == LogicalKeyboardKey.keyC) {
+          widget.onCopy();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.keyX) {
+          widget.onCut();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.keyV) {
+          widget.onPaste();
+          return KeyEventResult.handled;
+        }
+      }
+      if (event.logicalKey == LogicalKeyboardKey.keyA) {
+        final text = widget.block.controller.text;
+        final selection = widget.block.controller.selection;
+        if (selection.baseOffset == 0 && selection.extentOffset == text.length) {
+          widget.onSelectAll();
+          return KeyEventResult.handled;
+        }
       }
     }
 
@@ -176,7 +212,12 @@ class _BlockItemWidgetState extends State<BlockItemWidget> {
   }
 
   TextStyle _getTextStyle(BuildContext context) {
-    TextStyle base = TextStyle(fontFamily: widget.fontFamily);
+    final themeColor = Theme.of(context).textTheme.bodyMedium?.color ?? (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black);
+    final paint = Paint()
+      ..color = themeColor
+      ..isAntiAlias = true;
+
+    TextStyle base = TextStyle(fontFamily: widget.fontFamily, foreground: paint);
     switch (widget.block.type) {
       case BlockType.heading1:
         return base.copyWith(fontSize: 28, fontWeight: FontWeight.bold);
@@ -187,9 +228,12 @@ class _BlockItemWidgetState extends State<BlockItemWidget> {
       case BlockType.heading4:
         return base.copyWith(fontSize: 15, fontWeight: FontWeight.bold);
       case BlockType.blockquote:
-        return base.copyWith(fontSize: 16, fontStyle: FontStyle.italic, color: Colors.grey);
+        final quotePaint = Paint()
+          ..color = Colors.grey
+          ..isAntiAlias = true;
+        return base.copyWith(fontSize: 16, fontStyle: FontStyle.italic, foreground: quotePaint);
       case BlockType.codeBlock:
-        return const TextStyle(fontFamily: 'monospace', fontSize: 13);
+        return TextStyle(fontFamily: 'monospace', fontSize: 13, foreground: paint);
       default:
         return base.copyWith(fontSize: 15);
     }
@@ -209,6 +253,7 @@ class _BlockItemWidgetState extends State<BlockItemWidget> {
         onChanged: _onTextChanged,
         maxLines: null,
         style: _getTextStyle(context),
+        clipBehavior: Clip.antiAliasWithSaveLayer,
         decoration: InputDecoration(
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),

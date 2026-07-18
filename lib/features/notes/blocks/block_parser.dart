@@ -1,6 +1,8 @@
 import 'block_model.dart';
 
 class BlockParser {
+  static final RegExp _orderedListRegex = RegExp(r'^(\d+)\.\s(.*)');
+
   static List<MarkdownBlock> parse(String markdown) {
     if (markdown.trim().isEmpty) {
       return [MarkdownBlock()];
@@ -67,7 +69,7 @@ class BlockParser {
         continue;
       }
 
-      final match = RegExp(r'^(\d+)\.\s(.*)').firstMatch(line);
+      final match = _orderedListRegex.firstMatch(line);
       if (match != null) {
         blocks.add(MarkdownBlock(type: BlockType.orderedList, content: match.group(2) ?? ''));
         continue;

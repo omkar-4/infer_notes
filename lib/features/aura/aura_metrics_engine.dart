@@ -90,22 +90,22 @@ class AuraMetricsEngine {
     });
   }
 
-  void onTextChanged(String oldText, String newText) {
+  void recordKeystrokes(int count) {
     if (_activeFilePath == null) return;
     final metrics = _metricsCache[_activeFilePath!];
     if (metrics == null) return;
-
-    _wordCount = _calculateWordCount(newText);
-
-    int lengthDiff = newText.length - oldText.length;
-    
-    if (lengthDiff > 0 && lengthDiff <= 5) {
-       metrics.typedCharacters += lengthDiff;
-       for (int i = 0; i < lengthDiff; i++) {
-         _recentKeystrokes.add(DateTime.now());
-       }
-       _recalculateWPM();
+    if (count > 0 && count <= 10) {
+      metrics.typedCharacters += count;
+      for (int i = 0; i < count; i++) {
+        _recentKeystrokes.add(DateTime.now());
+      }
+      _recalculateWPM();
+      _metricsUpdateController.add(null);
     }
+  }
+
+  void updateWordCount(String fullText) {
+    _wordCount = _calculateWordCount(fullText);
     _metricsUpdateController.add(null);
   }
 

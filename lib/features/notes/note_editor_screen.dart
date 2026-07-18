@@ -32,6 +32,12 @@ class NoteEditorScreen extends StatefulWidget {
 class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorState, NoteEditorActions, NoteEditorUI {
   double _lastScreenWidth = 0;
   final ScrollController _toolbarScrollController = ScrollController();
+  final GlobalKey<BlockEditorState> blockEditorKey = GlobalKey<BlockEditorState>();
+  Rect? localSelectionRect;
+  Rect? globalSelectionRect;
+  Offset? dragStartLocal;
+  Offset? dragStartGlobal;
+  bool isDragSelecting = false;
 
   @override
   void initState() {
@@ -104,6 +110,66 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
     }
   }
 
+
+
+  void _focusClosestBlockToPoint(Offset localPosition) {
+    final workareaBox = context.findRenderObject() as RenderBox?;
+    if (workareaBox == null) return;
+    final globalPos = workareaBox.localToGlobal(localPosition);
+    
+    final blockKeys = blockEditorKey.currentState?.blockKeys;
+    if (blockKeys == null || blockKeys.isEmpty) return;
+    
+    double minDistance = double.infinity;
+    double minHorizDistance = double.infinity;
+    MarkdownBlock? closestGlobalBlock;
+    MarkdownBlock? closestHorizontalBlock;
+    
+    for (var block in blockController.blocks) {
+      final key = blockKeys[block.id];
+      if (key == null || key.currentContext == null) continue;
+      final box = key.currentContext!.findRenderObject() as RenderBox?;
+      if (box == null) continue;
+      
+      final blockPos = box.localToGlobal(Offset.zero);
+      final blockRect = blockPos & box.size;
+      
+      final bool intersectsVertically = globalPos.dy >= blockRect.top && globalPos.dy <= blockRect.bottom;
+      
+      if (intersectsVertically) {
+        final dist = (globalPos.dx - blockRect.center.dx).abs();
+        if (dist < minHorizDistance) {
+          minHorizDistance = dist;
+          closestHorizontalBlock = block;
+        }
+      }
+      
+      final distToCenter = (globalPos - blockRect.center).distance;
+      if (distToCenter < minDistance) {
+        minDistance = distToCenter;
+        closestGlobalBlock = block;
+      }
+    }
+    
+    final targetBlock = closestHorizontalBlock ?? closestGlobalBlock;
+    if (targetBlock != null) {
+      targetBlock.focusNode.requestFocus();
+      targetBlock.controller.selection = TextSelection.collapsed(offset: targetBlock.controller.text.length);
+    }
+    blockController.clearSelection();
+  }
+
+  void _setLayoutMode(String mode) async {
+    if (mode == 'zen') {
+      await windowManager.setFullScreen(true);
+    } else if (layoutMode == 'zen' && mode != 'zen') {
+      await windowManager.setFullScreen(false);
+    }
+    setState(() {
+      layoutMode = mode;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -131,11 +197,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
     Widget editorContent = !isNoteOpen 
         ? const Center(child: Text('no note open'))
         : BlockEditor(
+            key: blockEditorKey,
             controller: blockController,
             fontFamily: selectedFont == 'Serif'
                 ? 'Times New Roman'
                 : (selectedFont == 'Monospace' ? 'JetBrains Mono' : 'Google Sans'),
             maxWidth: editorMaxWidth,
+            scrollController: editorScrollController,
           );
 
     Widget scaffoldBody = Listener(
@@ -282,35 +350,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                                         ),
                                       ),
                               if (!isTight) const Spacer(),
-                              // Font options dropdown
-                              if (isNoteOpen && !isCanvasMode) ...[
-                                DropdownButton<String>(
-                                  value: selectedFont,
-                                  underline: const SizedBox.shrink(),
-                                  items: const [
-                                    DropdownMenuItem(value: 'Sans-Serif', child: Text('Sans-Serif', style: TextStyle(fontSize: 12))),
-                                    DropdownMenuItem(value: 'Serif', child: Text('Serif', style: TextStyle(fontSize: 12))),
-                                    DropdownMenuItem(value: 'Monospace', child: Text('Monospace', style: TextStyle(fontSize: 12))),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) setState(() => selectedFont = val);
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                DropdownButton<String>(
-                                  value: layoutMode,
-                                  underline: const SizedBox.shrink(),
-                                  items: const [
-                                    DropdownMenuItem(value: 'centered_narrow', child: Text('Narrow', style: TextStyle(fontSize: 12))),
-                                    DropdownMenuItem(value: 'centered_wide', child: Text('Wide', style: TextStyle(fontSize: 12))),
-                                    DropdownMenuItem(value: 'zen', child: Text('Zen Mode', style: TextStyle(fontSize: 12))),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) setState(() => layoutMode = val);
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                              ],
+
                               AppIconButton(
                                 icon: isCanvasMode ? Icons.edit_document : Icons.brush,
                                 onPressed: () {
@@ -386,29 +426,114 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                   Expanded(
                     child: isCanvasMode 
                         ? const CanvasScreen()
-                        : Stack(
-                            children: [
-                              Scrollbar(
-                                controller: editorScrollController,
-                                thumbVisibility: true,
-                                interactive: true,
-                                child: SingleChildScrollView(
-                                  controller: editorScrollController,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                                    child: editorContent,
+                        : GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTapDown: (details) {
+                              final workareaBox = context.findRenderObject() as RenderBox?;
+                              if (workareaBox != null) {
+                                final workareaWidth = workareaBox.size.width;
+                                if (details.localPosition.dx >= workareaWidth - 20) {
+                                  return;
+                                }
+                              }
+                              _focusClosestBlockToPoint(details.localPosition);
+                            },
+                            onPanStart: (details) {
+                              final workareaBox = context.findRenderObject() as RenderBox?;
+                              if (workareaBox == null) return;
+                              final workareaWidth = workareaBox.size.width;
+                              if (details.localPosition.dx >= workareaWidth - 20) {
+                                return;
+                              }
+                              double editorMaxWidth = 700.0;
+                              if (layoutMode == 'centered_wide') {
+                                editorMaxWidth = 1000.0;
+                              } else if (layoutMode == 'zen') {
+                                editorMaxWidth = 800.0;
+                              }
+                              final leftMargin = (workareaWidth - editorMaxWidth) / 2.0;
+                              final rightMargin = leftMargin + editorMaxWidth;
+                              final startX = details.localPosition.dx;
+                              if (startX < leftMargin || startX > rightMargin) {
+                                setState(() {
+                                  dragStartLocal = details.localPosition;
+                                  dragStartGlobal = details.globalPosition;
+                                  localSelectionRect = Rect.fromPoints(dragStartLocal!, dragStartLocal!);
+                                  globalSelectionRect = Rect.fromPoints(dragStartGlobal!, dragStartGlobal!);
+                                  isDragSelecting = true;
+                                });
+                              }
+                            },
+                            onPanUpdate: (details) {
+                              if (dragStartLocal != null) {
+                                final workareaBox = context.findRenderObject() as RenderBox?;
+                                if (workareaBox != null) {
+                                  final workareaWidth = workareaBox.size.width;
+                                  final maxAllowedX = workareaWidth - 20.0;
+
+                                  double clampedLocalX = details.localPosition.dx;
+                                  if (clampedLocalX > maxAllowedX) {
+                                    clampedLocalX = maxAllowedX;
+                                  }
+
+                                  final double deltaX = details.localPosition.dx - clampedLocalX;
+                                  final double clampedGlobalX = details.globalPosition.dx - deltaX;
+
+                                  final clampedLocalPos = Offset(clampedLocalX, details.localPosition.dy);
+                                  final clampedGlobalPos = Offset(clampedGlobalX, details.globalPosition.dy);
+
+                                  setState(() {
+                                    localSelectionRect = Rect.fromPoints(dragStartLocal!, clampedLocalPos);
+                                    globalSelectionRect = Rect.fromPoints(dragStartGlobal!, clampedGlobalPos);
+                                    final blockKeys = blockEditorKey.currentState?.blockKeys;
+                                    if (blockKeys != null && blockKeys.isNotEmpty) {
+                                      blockController.selectOverlappingBlocks(globalSelectionRect!, blockKeys);
+                                    }
+                                  });
+                                }
+                              }
+                            },
+                            onPanEnd: (_) {
+                              setState(() {
+                                dragStartLocal = null;
+                                dragStartGlobal = null;
+                                localSelectionRect = null;
+                                globalSelectionRect = null;
+                                isDragSelecting = false;
+                              });
+                            },
+                            child: Stack(
+                              children: [
+                                 editorContent,
+                                if (isDragSelecting && localSelectionRect != null)
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: CustomPaint(
+                                        painter: SelectionPainter(localSelectionRect),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              if (layoutMode == 'zen')
-                                Positioned(
-                                  top: 16,
-                                  right: 16,
-                                  child: FloatingExitZenButton(
-                                    onPressed: () => setState(() => layoutMode = 'centered_narrow'),
+                                if (layoutMode == 'zen')
+                                  Positioned(
+                                    top: 16,
+                                    right: 16,
+                                    child: FloatingExitZenButton(
+                                      onPressed: () => _setLayoutMode('centered_narrow'),
+                                    ),
                                   ),
-                                ),
-                            ],
+                                if (isNoteOpen && !isCanvasMode)
+                                  Positioned(
+                                    bottom: 16,
+                                    right: 16,
+                                    child: FloatingToolsMenu(
+                                      selectedFont: selectedFont,
+                                      layoutMode: layoutMode,
+                                      onFontChanged: (val) => setState(() => selectedFont = val),
+                                      onLayoutChanged: (val) => _setLayoutMode(val),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                   ),
                 ],
@@ -423,6 +548,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
       shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS): const SaveIntent(),
         LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS): const SaveIntent(),
+        LogicalKeySet(LogicalKeyboardKey.f11): const FullscreenIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -431,6 +557,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
               if (isNoteOpen && currentFilePath != null) {
                 saveNoteAtomic(currentFilePath!, blockController.getMarkdown(), isManual: true);
               }
+              return null;
+            },
+          ),
+          FullscreenIntent: CallbackAction<FullscreenIntent>(
+            onInvoke: (_) async {
+              final bool isFull = await windowManager.isFullScreen();
+              await windowManager.setFullScreen(!isFull);
               return null;
             },
           ),
@@ -496,6 +629,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
   }
 }
 
+class SelectionPainter extends CustomPainter {
+  final Rect? rect;
+  SelectionPainter(this.rect);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (rect == null) return;
+    final paint = Paint()
+      ..color = Colors.blue.withValues(alpha: 0.2)
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.blue
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawRect(rect!, paint);
+    canvas.drawRect(rect!, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(SelectionPainter oldDelegate) => oldDelegate.rect != rect;
+}
+
 class FloatingExitZenButton extends StatefulWidget {
   final VoidCallback onPressed;
   const FloatingExitZenButton({super.key, required this.onPressed});
@@ -530,4 +685,157 @@ class _FloatingExitZenButtonState extends State<FloatingExitZenButton> {
 
 class SaveIntent extends Intent {
   const SaveIntent();
+}
+
+class FullscreenIntent extends Intent {
+  const FullscreenIntent();
+}
+
+class FloatingToolsMenu extends StatefulWidget {
+  final String selectedFont;
+  final String layoutMode;
+  final ValueChanged<String> onFontChanged;
+  final ValueChanged<String> onLayoutChanged;
+
+  const FloatingToolsMenu({
+    super.key,
+    required this.selectedFont,
+    required this.layoutMode,
+    required this.onFontChanged,
+    required this.onLayoutChanged,
+  });
+
+  @override
+  State<FloatingToolsMenu> createState() => _FloatingToolsMenuState();
+}
+
+class _FloatingToolsMenuState extends State<FloatingToolsMenu> {
+  bool _isOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (_isOpen) ...[
+          Container(
+            width: 260,
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Theme.of(context).dividerColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'TYPOGRAPHY & LAYOUT',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                const Text('Font Style', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                _buildSegmentedGroup(
+                  items: ['Sans-Serif', 'Serif', 'Monospace'],
+                  selected: widget.selectedFont,
+                  onChanged: widget.onFontChanged,
+                ),
+                const SizedBox(height: 16),
+                const Text('Editor Width', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                _buildSegmentedGroup(
+                  items: ['centered_narrow', 'centered_wide', 'zen'],
+                  labels: {
+                    'centered_narrow': 'Narrow',
+                    'centered_wide': 'Wide',
+                    'zen': 'Zen',
+                  },
+                  selected: widget.layoutMode,
+                  onChanged: widget.onLayoutChanged,
+                ),
+              ],
+            ),
+          ),
+        ],
+        FloatingActionButton(
+          mini: true,
+          backgroundColor: Theme.of(context).primaryColor,
+          foregroundColor: Colors.white,
+          onPressed: () => setState(() => _isOpen = !_isOpen),
+          child: AnimatedRotation(
+            duration: const Duration(milliseconds: 200),
+            turns: _isOpen ? 0.125 : 0.0,
+            child: Icon(_isOpen ? Icons.close : Icons.tune),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSegmentedGroup({
+    required List<String> items,
+    Map<String, String>? labels,
+    required String selected,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: Row(
+        children: items.map((item) {
+          final isSel = item == selected;
+          final label = labels != null ? (labels[item] ?? item) : item;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(item),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: isSel ? Theme.of(context).primaryColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: isSel
+                      ? [
+                          BoxShadow(
+                            color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                    color: isSel 
+                        ? Colors.white 
+                        : (Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:infer_notes/features/aura/aura_metrics_engine.dart';
@@ -12,6 +13,13 @@ class BlockEditorController extends ChangeNotifier {
   int _focusedIndex = -1;
   int get focusedIndex => _focusedIndex;
 
+  final List<String> _undoStack = [];
+  final List<String> _redoStack = [];
+  bool _isHistoryOperation = false;
+  
+  Timer? _historyTimer;
+  Timer? _metricsTimer;
+
   void loadMarkdown(String markdown) {
     for (var b in blocks) {
       b.dispose();
@@ -22,6 +30,13 @@ class BlockEditorController extends ChangeNotifier {
     final parsed = BlockParser.parse(markdown);
     blocks.addAll(parsed);
     _focusedIndex = -1;
+
+    if (!_isHistoryOperation) {
+      _undoStack.clear();
+      _redoStack.clear();
+      _undoStack.add(markdown);
+    }
+
     notifyListeners();
   }
 
@@ -85,12 +100,14 @@ class BlockEditorController extends ChangeNotifier {
       }
     }
     selectedBlockIds.clear();
+    saveHistoryStateDebounced();
     notifyListeners();
   }
 
   void changeBlockType(int index, BlockType newType) {
     if (index >= 0 && index < blocks.length) {
       blocks[index].type = newType;
+      saveHistoryStateDebounced();
       notifyListeners();
     }
   }
@@ -105,6 +122,7 @@ class BlockEditorController extends ChangeNotifier {
     );
     
     blocks.insert(index + 1, newBlock);
+    saveHistoryStateDebounced();
     notifyListeners();
 
     // Schedule focus request
@@ -126,6 +144,7 @@ class BlockEditorController extends ChangeNotifier {
 
     blocks.removeAt(index);
     currentBlock.dispose();
+    saveHistoryStateDebounced();
     notifyListeners();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -168,6 +187,7 @@ class BlockEditorController extends ChangeNotifier {
       blocks.insertAll(index + 1, parsedBlocks);
     }
     
+    saveHistoryStateDebounced();
     notifyListeners();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -176,19 +196,98 @@ class BlockEditorController extends ChangeNotifier {
     });
   }
 
+  void saveHistoryStateDebounced() {
+    _historyTimer?.cancel();
+    _historyTimer = Timer(const Duration(milliseconds: 300), () {
+      saveHistoryState();
+    });
+  }
+
+  void saveHistoryState() {
+    if (_isHistoryOperation) return;
+    final currentMarkdown = getMarkdown();
+    if (_undoStack.isEmpty || _undoStack.last != currentMarkdown) {
+      _undoStack.add(currentMarkdown);
+      if (_undoStack.length > 50) {
+        _undoStack.removeAt(0);
+      }
+      _redoStack.clear();
+    }
+  }
+
+  void undo() {
+    if (_undoStack.length < 2) return;
+    _isHistoryOperation = true;
+    final currentState = _undoStack.removeLast();
+    _redoStack.add(currentState);
+    final previousState = _undoStack.last;
+    loadMarkdown(previousState);
+    _isHistoryOperation = false;
+  }
+
+  void redo() {
+    if (_redoStack.isEmpty) return;
+    _isHistoryOperation = true;
+    final nextState = _redoStack.removeLast();
+    _undoStack.add(nextState);
+    loadMarkdown(nextState);
+    _isHistoryOperation = false;
+  }
+
   void handleTextChanged(String id, String oldText, String newText) {
-    final oldFullMarkdown = getMarkdown();
     final index = blocks.indexWhere((b) => b.id == id);
     if (index != -1) {
       blocks[index].content = newText;
     }
-    final newFullMarkdown = getMarkdown();
-    AuraMetricsEngine().onTextChanged(oldFullMarkdown, newFullMarkdown);
-    notifyListeners();
+    
+    // Instantly log keystroke difference for WPM
+    final diff = newText.length - oldText.length;
+    if (diff > 0) {
+      AuraMetricsEngine().recordKeystrokes(diff);
+    }
+    
+    // Debounce expensive total word count updates
+    _metricsTimer?.cancel();
+    _metricsTimer = Timer(const Duration(milliseconds: 150), () {
+      final md = getMarkdown();
+      AuraMetricsEngine().updateWordCount(md);
+    });
+
+    // Debounce history state snapshots to prevent lag
+    _historyTimer?.cancel();
+    _historyTimer = Timer(const Duration(milliseconds: 500), () {
+      saveHistoryState();
+    });
+  }
+
+  void selectOverlappingBlocks(Rect globalRect, Map<String, GlobalKey> blockKeys) {
+    final newSelectedIds = <String>{};
+    for (var block in blocks) {
+      final key = blockKeys[block.id];
+      if (key == null || key.currentContext == null) continue;
+      final box = key.currentContext!.findRenderObject() as RenderBox?;
+      if (box == null) continue;
+      final blockPosition = box.localToGlobal(Offset.zero);
+      final blockRect = blockPosition & box.size;
+      if (globalRect.overlaps(blockRect)) {
+        newSelectedIds.add(block.id);
+      }
+    }
+    
+    final bool isIdentical = selectedBlockIds.length == newSelectedIds.length &&
+        selectedBlockIds.every(newSelectedIds.contains);
+        
+    if (!isIdentical) {
+      selectedBlockIds.clear();
+      selectedBlockIds.addAll(newSelectedIds);
+      notifyListeners();
+    }
   }
 
   @override
   void dispose() {
+    _historyTimer?.cancel();
+    _metricsTimer?.cancel();
     for (var b in blocks) {
       b.dispose();
     }

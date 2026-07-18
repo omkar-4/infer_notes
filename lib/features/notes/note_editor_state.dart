@@ -53,7 +53,11 @@ mixin NoteEditorState on State<NoteEditorScreen> {
       final oldText = _fileCache[currentFilePath!] ?? '';
       if (newText != oldText) {
         _fileCache[currentFilePath!] = newText;
-        AuraMetricsEngine().onTextChanged(oldText, newText);
+        final diff = newText.length - oldText.length;
+        if (diff > 0) {
+          AuraMetricsEngine().recordKeystrokes(diff);
+        }
+        AuraMetricsEngine().updateWordCount(newText);
         setState(() {
           unsavedFiles.add(currentFilePath!);
         });
