@@ -1,3 +1,6 @@
+import 'package:infer_notes/features/aura/aura_status_bar.dart';
+import 'package:infer_notes/features/settings/settings_dialog.dart';
+import 'package:infer_notes/features/aura/aura_metrics_engine.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -74,10 +77,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
     } else if (state == UpdaterState.idle) {
       // Means already up to date if manually checked (not silent)
       ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('You are already using the latest version.'),
-        duration: Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('You are already using the latest version (${UpdaterService.latestAppVersion}).'), duration: const Duration(seconds: 2)));
     } else if (state == UpdaterState.readyToInstall) {
       showDialog(
         context: context,
@@ -366,11 +366,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                                       decoration: const InputDecoration(
                                         border: InputBorder.none,
                                         hintText: 'Start typing...',
-                                        contentPadding: EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0, right: 16.0), // add right padding back so text doesn't overlap the scrollbar thumb
+                                        contentPadding: EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0, right: 16.0),
                                       ),
                                       onChanged: (val) {
                                         if (currentFilePath != null) {
+                                          final oldText = _fileCache[currentFilePath!] ?? '';
                                           _fileCache[currentFilePath!] = val;
+                                          AuraMetricsEngine().onTextChanged(oldText, val);
                                           setState(() {
                                             unsavedFiles.add(currentFilePath!);
                                           });
@@ -410,6 +412,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                 children: [
                   const CustomTitleBar(),
                   Expanded(child: scaffoldBody),
+                  if (currentFilePath != null) AuraStatusBar(filePath: currentFilePath!),
                 ],
               ),
               Positioned(
@@ -466,3 +469,5 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
 class SaveIntent extends Intent {
   const SaveIntent();
 }
+
+

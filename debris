@@ -1,0 +1,158 @@
+import 'dart:async';
+import 'dart:ffi';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui'; // For Locale
+
+import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:win32/win32.dart';
+
+class WindowsSpellCheckService implements SpellCheckService {
+  Timer? _debounceTimer;
+  ISpellCheckerFactory? _factory;
+  
+  WindowsSpellCheckService() {
+    if (!Platform.isWindows) return;
+    _initializeCom();
+  }
+
+  void _initializeCom() {
+    CoInitializeEx(COINIT_APARTMENTTHREADED);
+    try {
+      final clsid = GUID('{7AB36653-1796-484B-BDFA-E74F1CEBA31D}');
+      _factory = CoCreateInstance<ISpellCheckerFactory>(
+        clsid.toNative(),
+        null,
+        CLSCTX_INPROC_SERVER,
+      );
+    } catch (e) {
+      try {
+        // Fallback to alternative CLSID commonly found on specific Windows builds
+        final clsidAlt = GUID('{7AB36653-1796-484B-BDFA-E74F1DB7C1DC}');
+        _factory = CoCreateInstance<ISpellCheckerFactory>(
+          clsidAlt.toNative(),
+          null,
+          CLSCTX_INPROC_SERVER,
+        );
+      } catch (e2) {
+        // Ignore gracefully on OS without spellcheck
+      }
+    }
+  }
+
+  @override
+  Future<List<SuggestionSpan>?> fetchSpellCheckSuggestions(
+    Locale locale,
+    String text,
+  ) async {
+    if (_factory == null || text.isEmpty) return null;
+
+    _debounceTimer?.cancel();
+    final completer = Completer<List<SuggestionSpan>?>();
+
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      completer.complete(_processSpellCheck(locale, text));
+    });
+
+    return completer.future;
+  }
+
+  List<SuggestionSpan>? _processSpellCheck(Locale locale, String text) {
+    if (_factory == null) return null;
+    
+    final bcp47 = locale.toLanguageTag();
+    final pcwstrLanguage = bcp47.toNativeUtf16();
+    
+    try {
+      final pcwstrLang = PCWSTR(pcwstrLanguage);
+      if (!_factory!.isSupported(pcwstrLang)) {
+        return null;
+      }
+      
+      final checker = _factory!.createSpellChecker(pcwstrLang);
+      if (checker == null) return null;
+
+      final pcwstrTextPtr = text.toNativeUtf16();
+      final pcwstrText = PCWSTR(pcwstrTextPtr);
+      final errors = checker.check(pcwstrText);
+      
+      final spans = <SuggestionSpan>[];
+      
+      if (errors != null) {
+        final errorPtr = calloc<VTablePointer>();
+        while (errors.next(errorPtr) == S_OK) {
+          final error = ISpellingError(errorPtr.value);
+          
+          final startIndex = error.startIndex;
+          final length = error.length;
+          final action = error.correctiveAction;
+          
+          final suggestions = <String>[];
+          
+          if (action == CORRECTIVE_ACTION_GET_SUGGESTIONS) {
+            final wordToSuggest = text.substring(startIndex, startIndex + length);
+            final wordPtr = wordToSuggest.toNativeUtf16();
+            final enumString = checker.suggest(PCWSTR(wordPtr));
+            
+            if (enumString != null) {
+              final pString = calloc<Pointer<Utf16>>();
+              final pceltFetched = calloc<Uint32>();
+              
+              while (enumString.next(1, pString, pceltFetched) == S_OK && pceltFetched.value == 1) {
+                if (pString.value != nullptr) {
+                  suggestions.add(pString.value.toDartString());
+                  CoTaskMemFree(pString.value);
+                }
+              }
+              
+              free(pString);
+              free(pceltFetched);
+              enumString.release();
+            }
+            free(wordPtr);
+          } else if (action == CORRECTIVE_ACTION_REPLACE) {
+            try {
+              final replacement = error.replacement;
+              if (replacement.address != 0) {
+                suggestions.add(replacement.toDartString());
+                CoTaskMemFree(replacement);
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          spans.add(SuggestionSpan(
+            TextRange(start: startIndex, end: startIndex + length),
+            suggestions,
+          ));
+          
+          error.release();
+        }
+        free(errorPtr);
+        errors.release();
+      }
+      
+      free(pcwstrTextPtr);
+      checker.release();
+      
+      return spans;
+    } catch (e) {
+      // Ignore
+      return null;
+    } finally {
+      free(pcwstrLanguage);
+    }
+  }
+
+  void dispose() {
+    _debounceTimer?.cancel();
+    _factory?.release();
+    _factory = null;
+    CoUninitialize();
+  }
+}
+
+

@@ -30,6 +30,8 @@ class UpdaterService {
   static UpdaterState state = UpdaterState.idle;
   static UpdaterError? lastError;
   static final ValueNotifier<double> downloadProgressNotifier = ValueNotifier(0.0);
+  static String? currentAppVersion;
+  static String? latestAppVersion;
   
   static void Function(UpdaterState, UpdaterError?)? onStateChange;
   
@@ -51,7 +53,8 @@ class UpdaterService {
     onStateChange?.call(state, lastError);
 
     try {
-      final response = await http.get(Uri.parse(_archiveURL));
+      final cacheBusterUrl = '$_archiveURL?t=${DateTime.now().millisecondsSinceEpoch}';
+      final response = await http.get(Uri.parse(cacheBusterUrl));
       if (response.statusCode == 200) {
         final manifest = jsonDecode(response.body);
         
@@ -64,9 +67,11 @@ class UpdaterService {
         String currentVersionStr = packageInfo.version;
         // Sometimes packageInfo.version can be empty in debug, default to 0.0.0
         if (currentVersionStr.isEmpty) currentVersionStr = '0.0.0';
+        currentAppVersion = currentVersionStr;
         
         final currentVersion = Version.parse(currentVersionStr);
         final latestVersion = Version.parse(manifest['version']);
+        latestAppVersion = manifest['version'];
         
         bool hasUpdate = latestVersion > currentVersion;
         
@@ -170,7 +175,7 @@ class UpdaterService {
 
     if (Platform.isWindows) {
       // Execute the downloaded InnoSetup .exe installer
-      await Process.start(tempFile.path, ['/SILENT']);
+      await Process.start(tempFile.path, ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
       exit(0); // Immediately terminate this app so the installer can overwrite files
     } else {
       // For MacOS/Linux, this would be isolated to their specific package managers (.dmg / .AppImage)
@@ -178,3 +183,4 @@ class UpdaterService {
     }
   }
 }
+

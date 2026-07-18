@@ -170,10 +170,23 @@ mixin NoteEditorUI on NoteEditorActions {
           ),
           const Divider(height: 1, thickness: 1),
           SafeArea(
-            child: ListTile(
-              leading: const Icon(Icons.feedback, size: 18),
-              title: const Text('Feedback', style: TextStyle(fontSize: 13)),
-              onTap: openFeedbackDialog,
+            child: Row(
+              children: [
+                Expanded(
+                  child: ListTile(
+                    leading: const Icon(Icons.feedback, size: 18),
+                    title: const Text('Feedback', style: TextStyle(fontSize: 13)),
+                    onTap: openFeedbackDialog,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings, size: 18),
+                  onPressed: () {
+                    showDialog(context: context, builder: (_) => SettingsDialog());
+                  },
+                ),
+                const SizedBox(width: 8),
+              ],
             ),
           ),
         ],
@@ -275,3 +288,6 @@ class CustomTitleBar extends StatelessWidget {
     );
   }
 }
+
+
+

@@ -24,6 +24,7 @@ mixin NoteEditorActions on NoteEditorState {
       isNoteOpen = false;
       currentFilePath = null;
       controller.clear();
+      AuraMetricsEngine().setActiveNote(null, '');
     });
   }
 
@@ -116,8 +117,10 @@ mixin NoteEditorActions on NoteEditorState {
       if (_fileCache.containsKey(path)) {
         final content = _fileCache[path]!;
         controller.text = content;
+        AuraMetricsEngine().setActiveNote(path, content);
       } else {
         controller.text = '';
+        AuraMetricsEngine().setActiveNote(path, '');
       }
     });
 
@@ -130,6 +133,7 @@ mixin NoteEditorActions on NoteEditorState {
 
       setState(() {
         controller.text = content;
+        AuraMetricsEngine().setActiveNote(path, content);
       });
     } catch (e) {
       if (currentFilePath == path) {

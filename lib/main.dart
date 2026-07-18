@@ -3,6 +3,8 @@ import 'package:window_manager/window_manager.dart';
 import 'features/notes/note_editor_screen.dart';
 import 'core/theme.dart';
 import 'features/updater/updater_service.dart';
+import 'features/aura/aura_metrics_engine.dart';
+import 'features/settings/settings_service.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -33,6 +35,10 @@ void main() async {
   
   // Initialize the auto-update engine on startup
   await UpdaterService.initialize();
+  
+  // Initialize Aura metrics engine and Settings
+  await SettingsService().initialize();
+  await AuraMetricsEngine().initialize();
   
   runApp(const MainApp());
 }
