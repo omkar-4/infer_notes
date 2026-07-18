@@ -14,6 +14,9 @@ import '../../main.dart';
 import '../../core/theme.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'blocks/block_model.dart';
+import 'blocks/block_editor_controller.dart';
+import 'blocks/block_editor.dart';
 
 part 'note_editor_state.dart';
 part 'note_editor_actions.dart';
@@ -75,7 +78,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
         )
       );
     } else if (state == UpdaterState.idle) {
-      // Means already up to date if manually checked (not silent)
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('You are already using the latest version (${UpdaterService.latestAppVersion}).'), duration: const Duration(seconds: 2)));
     } else if (state == UpdaterState.readyToInstall) {
@@ -103,28 +105,38 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
   }
 
   @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     
-    // Auto-hide when window width exactly equals sidebar size + safety margin of 8px
     final bool isScreenTooSmall = screenWidth <= (sidebarWidth + 8);
-    final bool effectiveSidebarVisible = isSidebarVisible && !isScreenTooSmall;
+    final bool effectiveSidebarVisible = isSidebarVisible && !isScreenTooSmall && layoutMode != 'zen';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_lastScreenWidth > 600 && screenWidth <= 600 && isSidebarVisible) {
         setState(() { isSidebarVisible = false; });
       }
-      // Sync state if it was forced hidden by extreme shrink
       if (isScreenTooSmall && isSidebarVisible) {
         setState(() { isSidebarVisible = false; });
       }
       _lastScreenWidth = screenWidth;
     });
+
+    double editorMaxWidth = 700.0;
+    if (layoutMode == 'centered_wide') {
+      editorMaxWidth = 1000.0;
+    } else if (layoutMode == 'zen') {
+      editorMaxWidth = 800.0;
+    }
+
+    Widget editorContent = !isNoteOpen 
+        ? const Center(child: Text('no note open'))
+        : BlockEditor(
+            controller: blockController,
+            fontFamily: selectedFont == 'Serif'
+                ? 'Times New Roman'
+                : (selectedFont == 'Monospace' ? 'JetBrains Mono' : 'Google Sans'),
+            maxWidth: editorMaxWidth,
+          );
 
     Widget scaffoldBody = Listener(
       onPointerDown: (_) {
@@ -134,69 +146,66 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
       },
       child: SafeArea(
         child: Row(
-            children: [
-              AnimatedContainer(
-                // Snap instantly to 0 if screen is too small to prevent any layout overflow during animation
-                duration: isScreenTooSmall || isDragging ? Duration.zero : const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
-                width: effectiveSidebarVisible ? sidebarWidth : 0.0,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.centerRight,
-                    minWidth: sidebarWidth,
-                    maxWidth: sidebarWidth,
-                    child: Row(
-                        children: [
-                          Expanded(child: buildSidebar(context)),
-                          MouseRegion(
-                            cursor: SystemMouseCursors.resizeLeftRight,
-                            child: GestureDetector(
-                              onHorizontalDragStart: (details) {
-                                setState(() { isDragging = true; });
-                              },
-                              onHorizontalDragEnd: (details) {
-                                setState(() { isDragging = false; });
-                              },
-                              onHorizontalDragUpdate: (details) {
-                                setState(() {
-                                  sidebarWidth += details.delta.dx;
-                                  if (sidebarWidth < 220) sidebarWidth = 220;
-                                  if (sidebarWidth > MediaQuery.of(context).size.width / 2) {
-                                    sidebarWidth = MediaQuery.of(context).size.width / 2;
-                                  }
-                                });
-                              },
+          children: [
+            AnimatedContainer(
+              duration: isScreenTooSmall || isDragging ? Duration.zero : const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              width: effectiveSidebarVisible ? sidebarWidth : 0.0,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.centerRight,
+                  minWidth: sidebarWidth,
+                  maxWidth: sidebarWidth,
+                  child: Row(
+                    children: [
+                      Expanded(child: buildSidebar(context)),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.resizeLeftRight,
+                        child: GestureDetector(
+                          onHorizontalDragStart: (details) {
+                            setState(() { isDragging = true; });
+                          },
+                          onHorizontalDragEnd: (details) {
+                            setState(() { isDragging = false; });
+                          },
+                          onHorizontalDragUpdate: (details) {
+                            setState(() {
+                              sidebarWidth += details.delta.dx;
+                              if (sidebarWidth < 220) sidebarWidth = 220;
+                              if (sidebarWidth > MediaQuery.of(context).size.width / 2) {
+                                sidebarWidth = MediaQuery.of(context).size.width / 2;
+                              }
+                            });
+                          },
+                          child: Container(
+                            width: 12.0,
+                            color: Colors.transparent,
+                            child: Center(
                               child: Container(
-                                width: 12.0,
-                                color: Colors.transparent,
-                                child: Center(
-                                  child: Container(
-                                    width: 1.0,
-                                    color: Theme.of(context).dividerColor,
-                                  ),
-                                ),
+                                width: 1.0,
+                                color: Theme.of(context).dividerColor,
                               ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
-              Expanded(
-                child: Column(
-                  children: [
-                    // Custom thin toolbar
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  if (layoutMode != 'zen') ...[
                     Container(
                       height: 40,
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: LayoutBuilder(
                         builder: (context, constraints) {
-                          // Calculate exactly how much width we need for the right side and left menu
-                          final double rightSideWidth = (isNoteOpen && !isCanvasMode) ? 200.0 : 120.0;
-                          final double minRequiredWidth = rightSideWidth + 48.0; // 40px menu + 8px spacing
+                          final double rightSideWidth = (isNoteOpen && !isCanvasMode) ? 350.0 : 120.0;
+                          final double minRequiredWidth = rightSideWidth + 48.0;
                           
-                          // Dynamically measure the title width so we know EXACTLY when to hide it
                           double titleWidth = 0.0;
                           if (currentFilePath != null && !isCanvasMode) {
                             if (isEditingTitle) {
@@ -211,9 +220,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                             }
                           }
                           
-                          // 16px safety buffer to ensure it hides right as they touch
                           final double titleThreshold = minRequiredWidth + titleWidth + 16.0;
-                          
                           final bool showTitle = constraints.maxWidth >= titleThreshold;
                           final bool isTight = constraints.maxWidth < minRequiredWidth;
 
@@ -223,7 +230,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                                 icon: Icons.menu,
                                 size: 20,
                                 onPressed: isScreenTooSmall 
-                                    ? null // Native disabled state, perfectly grays out the button!
+                                    ? null 
                                     : () {
                                         setState(() {
                                           isSidebarVisible = !isSidebarVisible;
@@ -275,12 +282,41 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                                         ),
                                       ),
                               if (!isTight) const Spacer(),
+                              // Font options dropdown
+                              if (isNoteOpen && !isCanvasMode) ...[
+                                DropdownButton<String>(
+                                  value: selectedFont,
+                                  underline: const SizedBox.shrink(),
+                                  items: const [
+                                    DropdownMenuItem(value: 'Sans-Serif', child: Text('Sans-Serif', style: TextStyle(fontSize: 12))),
+                                    DropdownMenuItem(value: 'Serif', child: Text('Serif', style: TextStyle(fontSize: 12))),
+                                    DropdownMenuItem(value: 'Monospace', child: Text('Monospace', style: TextStyle(fontSize: 12))),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) setState(() => selectedFont = val);
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                DropdownButton<String>(
+                                  value: layoutMode,
+                                  underline: const SizedBox.shrink(),
+                                  items: const [
+                                    DropdownMenuItem(value: 'centered_narrow', child: Text('Narrow', style: TextStyle(fontSize: 12))),
+                                    DropdownMenuItem(value: 'centered_wide', child: Text('Wide', style: TextStyle(fontSize: 12))),
+                                    DropdownMenuItem(value: 'zen', child: Text('Zen Mode', style: TextStyle(fontSize: 12))),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) setState(() => layoutMode = val);
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               AppIconButton(
                                 icon: isCanvasMode ? Icons.edit_document : Icons.brush,
                                 onPressed: () {
                                   if (currentFilePath != null && unsavedFiles.contains(currentFilePath)) {
-                                    saveNoteAtomic(currentFilePath!, controller.text, isManual: false).then((_) {
-                                      _fileCache[currentFilePath!] = controller.text;
+                                    saveNoteAtomic(currentFilePath!, blockController.getMarkdown(), isManual: false).then((_) {
+                                      _fileCache[currentFilePath!] = blockController.getMarkdown();
                                     });
                                   }
                                   setState(() {
@@ -306,7 +342,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                               if (isNoteOpen && !isCanvasMode) ...[
                                 AppIconButton(
                                   icon: Icons.save,
-                                  onPressed: () => saveNoteAtomic(currentFilePath!, controller.text, isManual: true),
+                                  onPressed: () => saveNoteAtomic(currentFilePath!, blockController.getMarkdown(), isManual: true),
                                   tooltip: 'Save',
                                 ),
                                 AppIconButton(
@@ -321,7 +357,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                           if (isTight) {
                             return ScrollbarTheme(
                               data: ScrollbarThemeData(
-                                thickness: WidgetStateProperty.all(6.0), // Thicker, easy to grab
+                                thickness: WidgetStateProperty.all(6.0),
                                 radius: const Radius.circular(4.0),
                                 crossAxisMargin: 2.0,
                               ),
@@ -346,60 +382,54 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
                       ),
                     ),
                     const Divider(height: 1, thickness: 1),
-                    Expanded(
-                      child: isCanvasMode 
-                          ? const CanvasScreen()
-                          : !isNoteOpen 
-                              ? const Center(child: Text('no note open'))
-                              : Scrollbar(
+                  ],
+                  Expanded(
+                    child: isCanvasMode 
+                        ? const CanvasScreen()
+                        : Stack(
+                            children: [
+                              Scrollbar(
+                                controller: editorScrollController,
+                                thumbVisibility: true,
+                                interactive: true,
+                                child: SingleChildScrollView(
                                   controller: editorScrollController,
-                                  thumbVisibility: true,
-                                  interactive: true,
-                                  child: SingleChildScrollView(
-                                    controller: editorScrollController,
-                                    child: TextField(
-                                      controller: controller,
-                                      maxLines: null,
-                                      scrollPhysics: const NeverScrollableScrollPhysics(),
-                                      keyboardType: TextInputType.multiline,
-                                      style: Theme.of(context).textTheme.bodyLarge,
-                                      decoration: const InputDecoration(
-                                        border: InputBorder.none,
-                                        hintText: 'Start typing...',
-                                        contentPadding: EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0, right: 16.0),
-                                      ),
-                                      onChanged: (val) {
-                                        if (currentFilePath != null) {
-                                          final oldText = _fileCache[currentFilePath!] ?? '';
-                                          _fileCache[currentFilePath!] = val;
-                                          AuraMetricsEngine().onTextChanged(oldText, val);
-                                          setState(() {
-                                            unsavedFiles.add(currentFilePath!);
-                                          });
-                                        }
-                                      },
-                                    ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                                    child: editorContent,
                                   ),
                                 ),
-                    ),
-                  ],
-                ),
+                              ),
+                              if (layoutMode == 'zen')
+                                Positioned(
+                                  top: 16,
+                                  right: 16,
+                                  child: FloatingExitZenButton(
+                                    onPressed: () => setState(() => layoutMode = 'centered_narrow'),
+                                  ),
+                                ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ), // Row
-        ), // SafeArea
-      ); // Listener
+            ),
+          ],
+        ),
+      ),
+    );
+
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS): const SaveIntent(),
-        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS): const SaveIntent(), // for Mac
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS): const SaveIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
           SaveIntent: CallbackAction<SaveIntent>(
-            onInvoke: (SaveIntent intent) {
+            onInvoke: (intent) {
               if (isNoteOpen && currentFilePath != null) {
-                saveNoteAtomic(currentFilePath!, controller.text, isManual: true);
+                saveNoteAtomic(currentFilePath!, blockController.getMarkdown(), isManual: true);
               }
               return null;
             },
@@ -410,9 +440,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
             children: [
               Column(
                 children: [
-                  const CustomTitleBar(),
+                  if (layoutMode != 'zen') const CustomTitleBar(),
                   Expanded(child: scaffoldBody),
-                  if (currentFilePath != null) AuraStatusBar(filePath: currentFilePath!),
+                  if (currentFilePath != null && layoutMode != 'zen') AuraStatusBar(filePath: currentFilePath!),
                 ],
               ),
               Positioned(
@@ -466,8 +496,38 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with NoteEditorStat
   }
 }
 
+class FloatingExitZenButton extends StatefulWidget {
+  final VoidCallback onPressed;
+  const FloatingExitZenButton({super.key, required this.onPressed});
+
+  @override
+  State<FloatingExitZenButton> createState() => _FloatingExitZenButtonState();
+}
+
+class _FloatingExitZenButtonState extends State<FloatingExitZenButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedOpacity(
+        opacity: _hovered ? 1.0 : 0.2,
+        duration: const Duration(milliseconds: 200),
+        child: ElevatedButton.icon(
+          onPressed: widget.onPressed,
+          icon: const Icon(Icons.fullscreen_exit, size: 16),
+          label: const Text('Exit Zen', style: TextStyle(fontSize: 12)),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SaveIntent extends Intent {
   const SaveIntent();
 }
-
-

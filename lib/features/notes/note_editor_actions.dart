@@ -24,6 +24,7 @@ mixin NoteEditorActions on NoteEditorState {
       isNoteOpen = false;
       currentFilePath = null;
       controller.clear();
+      blockController.loadMarkdown('');
       AuraMetricsEngine().setActiveNote(null, '');
     });
   }
@@ -101,7 +102,7 @@ mixin NoteEditorActions on NoteEditorState {
     // 1. Capture current state for async saving
     if (isNoteOpen && currentFilePath != null && unsavedFiles.contains(currentFilePath)) {
       final oldPath = currentFilePath!;
-      String contentToSave = controller.text;
+      String contentToSave = blockController.getMarkdown();
       
       saveNoteAtomic(oldPath, contentToSave, isManual: false).then((_) {
          _fileCache[oldPath] = contentToSave; 
@@ -116,10 +117,10 @@ mixin NoteEditorActions on NoteEditorState {
       
       if (_fileCache.containsKey(path)) {
         final content = _fileCache[path]!;
-        controller.text = content;
+        blockController.loadMarkdown(content);
         AuraMetricsEngine().setActiveNote(path, content);
       } else {
-        controller.text = '';
+        blockController.loadMarkdown('');
         AuraMetricsEngine().setActiveNote(path, '');
       }
     });
@@ -132,7 +133,7 @@ mixin NoteEditorActions on NoteEditorState {
       _fileCache[path] = content;
 
       setState(() {
-        controller.text = content;
+        blockController.loadMarkdown(content);
         AuraMetricsEngine().setActiveNote(path, content);
       });
     } catch (e) {
@@ -286,6 +287,7 @@ mixin NoteEditorActions on NoteEditorState {
           isNoteOpen = true;
           currentFilePath = newPath;
           controller.clear();
+          blockController.loadMarkdown('');
         }
         selectedSidebarPath = newPath;
         isEditingSidebarPath = newPath; // trigger inline rename

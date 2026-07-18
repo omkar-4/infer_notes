@@ -16,6 +16,10 @@ mixin NoteEditorState on State<NoteEditorScreen> {
   StreamSubscription<FileSystemEvent>? _watchSubscription;
 
 
+  final BlockEditorController blockController = BlockEditorController();
+  String selectedFont = 'Sans-Serif';
+  String layoutMode = 'centered_narrow'; // centered_narrow, centered_wide, zen
+
   final TextEditingController controller = TextEditingController();
   final ScrollController editorScrollController = ScrollController();
   final FocusNode focusNode = FocusNode();
@@ -40,6 +44,21 @@ mixin NoteEditorState on State<NoteEditorScreen> {
   void initState() {
     super.initState();
     _loadVaultPath();
+    blockController.addListener(_onBlockControllerChanged);
+  }
+
+  void _onBlockControllerChanged() {
+    if (currentFilePath != null) {
+      final newText = blockController.getMarkdown();
+      final oldText = _fileCache[currentFilePath!] ?? '';
+      if (newText != oldText) {
+        _fileCache[currentFilePath!] = newText;
+        AuraMetricsEngine().onTextChanged(oldText, newText);
+        setState(() {
+          unsavedFiles.add(currentFilePath!);
+        });
+      }
+    }
   }
 
   void _saveVaultPath(String? path) {
@@ -124,9 +143,11 @@ mixin NoteEditorState on State<NoteEditorScreen> {
 
   @override
   void dispose() {
+    blockController.removeListener(_onBlockControllerChanged);
     _watchDebounceTimer?.cancel();
     _watchSubscription?.cancel();
     controller.dispose();
+    blockController.dispose();
     focusNode.dispose();
     titleController.dispose();
     titleFocusNode.dispose();
