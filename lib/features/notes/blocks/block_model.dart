@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'markdown_editing_controller.dart';
 
 enum BlockType {
   paragraph,
@@ -12,6 +13,7 @@ enum BlockType {
   blockquote,
   divider,
   codeBlock,
+  table,
 }
 
 class MarkdownBlock {
@@ -27,7 +29,7 @@ class MarkdownBlock {
     this.type = BlockType.paragraph,
     this.content = '',
   }) : id = id ?? const Uuid().v4() {
-    controller = TextEditingController(text: content);
+    controller = MarkdownEditingController(text: content);
     focusNode = FocusNode();
   }
 

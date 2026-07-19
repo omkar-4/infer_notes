@@ -42,6 +42,17 @@ class BlockParser {
         continue;
       }
 
+      if (line.trim().startsWith('|')) {
+        final StringBuffer tableBuffer = StringBuffer();
+        tableBuffer.write(line);
+        while (i + 1 < lines.length && lines[i + 1].trim().startsWith('|')) {
+          i++;
+          tableBuffer.write('\n${lines[i]}');
+        }
+        blocks.add(MarkdownBlock(type: BlockType.table, content: tableBuffer.toString()));
+        continue;
+      }
+
       if (line.startsWith('# ')) {
         blocks.add(MarkdownBlock(type: BlockType.heading1, content: line.substring(2)));
         continue;
@@ -127,6 +138,9 @@ class BlockParser {
             break;
           case BlockType.codeBlock:
             buffer.write('```\n$content\n```');
+            break;
+          case BlockType.table:
+            buffer.write(content);
             break;
           default:
             buffer.write(content);

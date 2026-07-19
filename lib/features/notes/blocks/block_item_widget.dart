@@ -234,9 +234,143 @@ class _BlockItemWidgetState extends State<BlockItemWidget> {
         return base.copyWith(fontSize: 16, fontStyle: FontStyle.italic, foreground: quotePaint);
       case BlockType.codeBlock:
         return TextStyle(fontFamily: 'monospace', fontSize: 13, foreground: paint);
+      case BlockType.table:
+        return TextStyle(fontFamily: 'monospace', fontSize: 13, foreground: paint);
       default:
         return base.copyWith(fontSize: 15);
     }
+  }
+
+  TextSpan _renderTextSpanWithMarkdown(BuildContext context, String text, TextStyle baseStyle) {
+    final RegExp pattern = RegExp(
+      r'(\*\*(.*?)\*\*)|(_([^_]+)_)|(`([^`]+)`)',
+      dotAll: true,
+    );
+
+    final List<InlineSpan> spans = [];
+    int lastIndex = 0;
+
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: text.substring(lastIndex, match.start),
+          style: baseStyle,
+        ));
+      }
+
+      if (match.group(1) != null) {
+        final innerText = match.group(2) ?? '';
+        spans.add(TextSpan(
+          text: innerText,
+          style: baseStyle.copyWith(fontWeight: FontWeight.bold),
+        ));
+      } else if (match.group(3) != null) {
+        final innerText = match.group(4) ?? '';
+        spans.add(TextSpan(
+          text: innerText,
+          style: baseStyle.copyWith(fontStyle: FontStyle.italic),
+        ));
+      } else if (match.group(5) != null) {
+        final innerText = match.group(6) ?? '';
+        spans.add(TextSpan(
+          text: innerText,
+          style: baseStyle.copyWith(
+            fontFamily: 'monospace',
+            backgroundColor: Colors.grey.withOpacity(0.2),
+          ),
+        ));
+      }
+
+      lastIndex = match.end;
+    }
+
+    if (lastIndex < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastIndex),
+        style: baseStyle,
+      ));
+    }
+
+    return TextSpan(children: spans, style: baseStyle);
+  }
+
+  Widget _buildTableWidget(BuildContext context, String markdownText) {
+    final lines = markdownText.split('\n').map((l) => l.trim()).toList();
+    if (lines.isEmpty) return const SizedBox.shrink();
+
+    final List<List<String>> rows = [];
+    
+    for (final line in lines) {
+      if (line.isEmpty) continue;
+      if (RegExp(r'^\|\s*[-:]+\s*\|').hasMatch(line) || RegExp(r'^\|\s*[-:| ]+\s*\|').hasMatch(line)) {
+        continue;
+      }
+      
+      String cleanLine = line;
+      if (cleanLine.startsWith('|')) cleanLine = cleanLine.substring(1);
+      if (cleanLine.endsWith('|')) cleanLine = cleanLine.substring(0, cleanLine.length - 1);
+      
+      final cells = cleanLine.split('|').map((c) => c.trim()).toList();
+      rows.add(cells);
+    }
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    final numCols = rows[0].length;
+    for (int i = 0; i < rows.length; i++) {
+      if (rows[i].length < numCols) {
+        rows[i] = [...rows[i], ...List.filled(numCols - rows[i].length, '')];
+      } else if (rows[i].length > numCols) {
+        rows[i] = rows[i].sublist(0, numCols);
+      }
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Theme.of(context).dividerColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Table(
+          border: TableBorder.symmetric(
+            inside: BorderSide(color: Theme.of(context).dividerColor),
+          ),
+          children: List.generate(rows.length, (rowIndex) {
+            final isHeader = rowIndex == 0;
+            final rowData = rows[rowIndex];
+            
+            return TableRow(
+              decoration: BoxDecoration(
+                color: isHeader
+                    ? (Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey.withOpacity(0.15)
+                        : Colors.grey.withOpacity(0.08))
+                    : null,
+              ),
+              children: rowData.map((cellText) {
+                return TableCell(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                    child: RichText(
+                      text: _renderTextSpanWithMarkdown(
+                        context,
+                        cellText,
+                        TextStyle(
+                          fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 14,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          }),
+        ),
+      ),
+    );
   }
 
   @override
@@ -315,6 +449,23 @@ class _BlockItemWidgetState extends State<BlockItemWidget> {
             const Divider(height: 20, thickness: 1.5),
             SizedBox(height: 0, child: inputField),
           ],
+        );
+        break;
+      case BlockType.table:
+        content = GestureDetector(
+          onTap: () {
+            widget.block.focusNode.requestFocus();
+          },
+          child: isFocused
+              ? Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  padding: const EdgeInsets.all(8.0),
+                  child: inputField,
+                )
+              : _buildTableWidget(context, widget.block.controller.text),
         );
         break;
       default:

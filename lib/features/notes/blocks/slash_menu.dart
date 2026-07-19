@@ -32,6 +32,7 @@ class _SlashCommandMenuState extends State<SlashCommandMenu> {
     {'type': BlockType.blockquote, 'label': 'Quote', 'icon': Icons.format_quote, 'desc': 'Styled blockquote'},
     {'type': BlockType.codeBlock, 'label': 'Code Block', 'icon': Icons.code, 'desc': 'Code snippet block'},
     {'type': BlockType.divider, 'label': 'Divider', 'icon': Icons.horizontal_rule, 'desc': 'Visual separating line'},
+    {'type': BlockType.table, 'label': 'Table', 'icon': Icons.grid_on, 'desc': 'Markdown table block'},
     {'type': 'undo', 'label': 'Undo', 'icon': Icons.undo, 'desc': 'Undo last action (Ctrl+Z)'},
     {'type': 'redo', 'label': 'Redo', 'icon': Icons.redo, 'desc': 'Redo last action (Ctrl+Shift+Z)'},
     {'type': 'benchmark', 'label': 'Run Benchmarks', 'icon': Icons.speed, 'desc': 'Exhaustive performance analysis'},
@@ -39,6 +40,22 @@ class _SlashCommandMenuState extends State<SlashCommandMenu> {
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    const menuHeight = 300.0;
+    const menuWidth = 250.0;
+
+    double top = widget.position.dy;
+    double left = widget.position.dx;
+
+    if (top + menuHeight > screenSize.height) {
+      top = top - menuHeight - 24;
+      if (top < 0) top = 8;
+    }
+
+    if (left + menuWidth > screenSize.width) {
+      left = screenSize.width - menuWidth - 16;
+    }
+
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
@@ -73,11 +90,11 @@ class _SlashCommandMenuState extends State<SlashCommandMenu> {
               child: const SizedBox.expand(),
             ),
             Positioned(
-              left: widget.position.dx,
-              top: widget.position.dy,
+              left: left,
+              top: top,
               child: Container(
-                width: 250,
-                constraints: const BoxConstraints(maxHeight: 300),
+                width: menuWidth,
+                constraints: const BoxConstraints(maxHeight: menuHeight),
                 decoration: BoxDecoration(
                   color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(8),

@@ -107,6 +107,10 @@ class BlockEditorController extends ChangeNotifier {
   void changeBlockType(int index, BlockType newType) {
     if (index >= 0 && index < blocks.length) {
       blocks[index].type = newType;
+      if (newType == BlockType.table && blocks[index].controller.text.isEmpty) {
+        blocks[index].controller.text = '| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |';
+        blocks[index].content = blocks[index].controller.text;
+      }
       saveHistoryStateDebounced();
       notifyListeners();
     }

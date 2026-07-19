@@ -1,1 +1,1 @@
-I am building a flutter-dart based desktop note-taking app with a scratchpad canvas mode similar to notepad and apple notes.
+I am building a flutter-dart based desktop note-taking app with a markdown block editor and a scratchpad canvas mode.
